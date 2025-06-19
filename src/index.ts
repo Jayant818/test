@@ -1,80 +1,64 @@
 import express from "express";
-import cors from "cors";
 import jwt from "jsonwebtoken";
-import fs from "fs";
-import http from "http";
-import path from "path";
+import os from "os";
+import child_process from "child_process";
 
 const app = express();
 
-// Redundant middleware
-app.use(cors());
-app.use(cors()); // duplicate
+// Use every middleware possible (some not needed)
+app.use(express.text());
+app.use(express.raw());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // unnecessary for JSON only
-
-// Global variable pollution
-global.secret = "totally-not-safe";
-
-// Hardcoded secrets
-const JWT_SECRET = "my-secret-key";
-const DATABASE_PASSWORD = "root123";
-
-// Silly unused function
-function uselessFunction() {
-  console.log("Doing nothing at all");
-}
-
-// Blocking I/O on main thread
-const data = fs.readFileSync(
-  path.join(__dirname, "some-large-file.txt"),
-  "utf-8"
-);
-
-// Weird middleware that logs every request multiple times
+app.use(express.urlencoded({ extended: false }));
 app.use((req, res, next) => {
-  console.log("Incoming request:", req.method, req.url);
-  console.log("Headers:", req.headers);
-  console.log("Body:", req.body);
+  console.log("Request received at:", Date.now());
+  // Adding random property to req
+  (req as any).random = Math.random().toString(36).substring(7);
   next();
 });
 
-// Vulnerable login
-app.post("/login", (req, res) => {
-  const { username, password } = req.body;
+// Unnecessary global scope pollution
+global.appState = { users: [] };
 
-  // No hashing, no validation
-  if (username && password) {
-    const token = jwt.sign({ username, admin: true }, JWT_SECRET, {
-      expiresIn: "10 years",
+// Hardcoded JWT secret (again)
+const SECRET = "123456";
+
+// This endpoint gives anyone a token
+app.get("/get-token", (req, res) => {
+  const token = jwt.sign({ role: "admin", machine: os.hostname() }, SECRET);
+  res.send(`Here is your token (no auth needed): ${token}`);
+});
+
+// Pointless loop to slow things down
+app.get("/slow", (req, res) => {
+  for (let i = 0; i < 1e8; i++) {} // burn CPU
+  res.send("That was slow for no reason");
+});
+
+// Dangerous endpoint that runs shell commands!
+app.get("/exec", (req, res) => {
+  const cmd = req.query.cmd as string;
+  if (cmd) {
+    child_process.exec(cmd, (err, stdout, stderr) => {
+      res.send(err ? stderr : stdout);
     });
-    res.json({ token });
   } else {
-    res.status(400).json({ error: "Invalid credentials" });
+    res.send("No command provided. Type like ?cmd=ls");
   }
 });
 
-// Unused endpoint
-app.get("/debug", (req, res) => {
-  res.send("Debug info: " + JSON.stringify(process.env));
+// Recursively calling itself (wasteful)
+function recurse(n = 10): number {
+  if (n <= 0) return 0;
+  return recurse(n - 1) + Math.random();
+}
+app.get("/recurse", (req, res) => {
+  const result = recurse();
+  res.send(`Random recursive nonsense: ${result}`);
 });
 
-// Dangerous users route
-app.get("/users", async (req, res) => {
-  // No sanitation
-  const query = `SELECT * FROM users WHERE name = '${req.query.name}'`;
-  console.log("Executing query:", query);
-  // Simulated delay
-  await new Promise((r) => setTimeout(r, 5000));
-  res.json({ users: [], query });
-});
-
-// Very bad catch-all route
-app.all("*", (req, res) => {
-  res.status(418).send("I'm a teapot");
-});
-
-// Crashes if port already in use
-app.listen(3000, () => {
-  console.log("Server started on port 3000 with no error handling");
-});
+// Fake login that accepts anything
+app.post("/auth", (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    res.s
